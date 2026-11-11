@@ -1,81 +1,226 @@
+
 import json
 from pathlib import Path
+
 import numpy as np
 import streamlit as st
 import tensorflow as tf
 from PIL import Image
 
-st.set_page_config(page_title="Facial Expression Classifier", page_icon="😊", layout="wide")
+# Page configuration
+st.set_page_config(
+    page_title="Facial Expression Recognition",
+    page_icon="😊",
+    layout="wide"
+)
+
+# Model settings
 MODEL_PATH = Path("facial_expression_model.keras")
 CLASSES_PATH = Path("classes.json")
 IMAGE_SIZE = (64, 64)
-DEFAULT_CLASSES = ["angry", "disgusted", "fearful", "happy", "neutral", "sad", "surprised"]
-EMOJI = {"angry": "😠", "disgusted": "🤢", "fearful": "😨", "happy": "😊",
-         "neutral": "😐", "sad": "😢", "surprised": "😮"}
 
-st.markdown("<style>.main-title{font-size:2.2rem;font-weight:750}.muted{color:#64748b}</style>", unsafe_allow_html=True)
+DEFAULT_CLASSES = [
+    "angry", "disgusted", "fearful",
+    "happy", "neutral", "sad", "surprised"
+]
+
+EMOJI = {
+    "angry": "😠",
+    "disgusted": "🤢",
+    "fearful": "😨",
+    "happy": "😊",
+    "neutral": "😐",
+    "sad": "😢",
+    "surprised": "😮"
+}
+
+# Load trained model
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model(
+        MODEL_PATH,
+        compile=False
+    )
+
+# Sidebar
 with st.sidebar:
     st.title("😊 Emotion AI")
-    page = st.radio("Navigation", ["Overview", "Predict Expression", "About Model"])
+    page = st.radio(
+        "Navigation",
+        ["Overview", "Predict Expression", "About Model"]
+    )
     st.divider()
-    st.caption("CNN · 64 × 64 RGB input · 7 classes")
+    st.caption("CNN | TensorFlow | 64 × 64 RGB")
 
-@st.cache_resource
-def load_model(path):
-    return tf.keras.models.load_model(path, compile=False)
-
+# Overview
 if page == "Overview":
-    st.markdown('<div class="main-title">Facial Expression Classification</div>', unsafe_allow_html=True)
-    st.markdown('<p class="muted">A convolutional neural network demonstration using the supplied FER image dataset.</p>', unsafe_allow_html=True)
-    cols = st.columns(3)
-    cols[0].metric("Model", "CNN")
-    cols[1].metric("Input size", "64 × 64")
-    cols[2].metric("Expression classes", "7")
-    st.subheader("Project workflow")
-    for heading, detail in [
-        ("1. Prepare dataset", "Extract the dataset ZIP. The training script combines alternate folder spellings into the same emotion label."),
-        ("2. Train model", "Run train_model.py to train, validate, and evaluate the CNN."),
-        ("3. Predict", "Upload a face image to view the predicted expression and class scores."),
-    ]:
-        with st.container(border=True):
-            st.markdown(f"**{heading}**")
-            st.write(detail)
-    st.info("For learning and demonstration only. Facial expressions do not reliably reveal a person's internal emotional state.")
 
+    st.title("😊 Facial Expression Recognition")
+
+    st.write(
+        "Upload a face image and use a trained CNN model "
+        "to classify its facial expression."
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Model", "CNN")
+    col2.metric("Image Size", "64 × 64")
+    col3.metric("Classes", "7")
+
+    st.subheader("Project Features")
+
+    st.write("✔ Upload facial image")
+    st.write("✔ Actual trained model prediction")
+    st.write("✔ Seven expression classes")
+    st.write("✔ Prediction score visualization")
+
+# Prediction
 elif page == "Predict Expression":
-    st.title("Upload an image")
-    if not MODEL_PATH.exists():
-        st.warning("Model file not found. Train the model first using the instructions in README.md.")
-    else:
-        try:
-            model = load_model(str(MODEL_PATH))
-            classes = json.loads(CLASSES_PATH.read_text(encoding="utf-8")) if CLASSES_PATH.exists() else DEFAULT_CLASSES
-            uploaded = st.file_uploader("Choose a JPG, JPEG, or PNG image", type=["jpg", "jpeg", "png"])
-            if uploaded:
-                image = Image.open(uploaded).convert("RGB")
-                left, right = st.columns([1, 1.2])
-                with left:
-                    st.image(image, caption="Uploaded image", use_container_width=True)
-                with right:
-                    if st.button("Predict expression", type="primary"):
-                        resized = image.resize(IMAGE_SIZE)
-                        arr = np.asarray(resized, dtype=np.float32)[None, ...]
-                        scores = model.predict(arr, verbose=0)[0]
-                        idx = int(np.argmax(scores))
-                        st.subheader("Prediction")
-                        st.markdown(f"## {EMOJI.get(classes[idx], '🙂')} {classes[idx].title()}")
-                        st.write("Model score distribution")
-                        for name, score in sorted(zip(classes, scores), key=lambda x: x[1], reverse=True):
-                            st.write(f"{EMOJI.get(name, '•')} **{name.title()}** — {score:.1%}")
-                            st.progress(float(score))
-                        st.caption("Scores are model outputs, not calibrated probabilities or evidence of a person's actual feelings.")
-        except Exception as exc:
-            st.error(f"Could not load or run the model: {exc}")
 
+    st.title("📸 Upload Image for Prediction")
+
+    uploaded_file = st.file_uploader(
+        "Choose a face image",
+        type=["jpg", "jpeg", "png"]
+    )
+
+    if uploaded_file is not None:
+
+        try:
+            # Read uploaded image
+            image = Image.open(uploaded_file).convert("RGB")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("Uploaded Image")
+                st.image(
+                    image,
+                    caption="Your uploaded image",
+                    use_container_width=True
+                )
+
+            with col2:
+                st.subheader("Model Prediction")
+
+                if st.button("🔍 Predict Expression",
+                             type="primary"):
+
+                    if not MODEL_PATH.exists():
+                        st.error(
+                            "Trained model not found! "
+                            "Please add facial_expression_model.keras."
+                        )
+                        st.stop()
+
+                    # Load actual trained model
+                    with st.spinner("Analyzing image..."):
+
+                        model = load_model()
+
+                        # Load class names
+                        if CLASSES_PATH.exists():
+                            classes = json.loads(
+                                CLASSES_PATH.read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                        else:
+                            classes = DEFAULT_CLASSES
+
+                        # Image preprocessing
+                        resized_image = image.resize(IMAGE_SIZE)
+
+                        img_array = np.asarray(
+                            resized_image,
+                            dtype=np.float32
+                        )
+
+                        # Add batch dimension
+                        img_array = np.expand_dims(
+                            img_array, axis=0
+                        )
+
+                        # Actual model prediction
+                        predictions = model.predict(
+                            img_array,
+                            verbose=0
+                        )[0]
+
+                        # Highest prediction
+                        predicted_index = int(
+                            np.argmax(predictions)
+                        )
+
+                        predicted_class = classes[predicted_index]
+                        confidence = float(
+                            predictions[predicted_index]
+                        )
+
+                    st.success("Prediction Completed!")
+
+                    st.markdown("### Predicted Expression")
+
+                    st.markdown(
+                        f"# {EMOJI.get(predicted_class, '🙂')} "
+                        f"{predicted_class.title()}"
+                    )
+
+                    st.metric(
+                        "Model Score",
+                        f"{confidence * 100:.2f}%"
+                    )
+
+                    st.subheader("All Expression Scores")
+
+                    for name, score in sorted(
+                        zip(classes, predictions),
+                        key=lambda x: x[1],
+                        reverse=True
+                    ):
+
+                        st.write(
+                            f"{EMOJI.get(name, '🙂')} "
+                            f"**{name.title()}**"
+                        )
+
+                        st.progress(
+                            float(np.clip(score, 0, 1))
+                        )
+
+                        st.caption(f"{score * 100:.2f}%")
+
+                    st.info(
+                        "This prediction is generated by the "
+                        "trained CNN model. It is an educational "
+                        "classification result, not a reliable "
+                        "measurement of someone's actual emotions."
+                    )
+
+        except Exception as exc:
+            st.error(f"Prediction Error: {exc}")
+
+# About Model
 else:
-    st.title("About the model")
-    st.write("The project follows the supplied introductory image-classification notebook: TensorFlow/Keras, directory-based image data, a CNN, softmax output, model saving, and class-name persistence.")
-    st.markdown("**Classes:** " + ", ".join(c.title() for c in DEFAULT_CLASSES))
-    st.markdown("**Input:** 64 × 64 RGB images")
-    st.markdown("**Output:** Seven class scores; the highest score is displayed as the predicted label.")
-    st.warning("This is an educational image classifier, not a psychological assessment tool. It may be inaccurate across lighting, pose, demographics, image quality, and datasets.")
+
+    st.title("About the CNN Model")
+
+    st.write(
+        "This project uses a Convolutional Neural Network "
+        "(CNN) developed with TensorFlow and Keras."
+    )
+
+    st.write("**Input:** 64 × 64 RGB image")
+    st.write("**Output:** Seven expression classes")
+
+    st.write("**Expression Classes:**")
+
+    for emotion in DEFAULT_CLASSES:
+        st.write(
+            f"{EMOJI[emotion]} {emotion.title()}"
+        )
+
+    st.warning(
+        "This project is intended for educational purposes only."
+    )
